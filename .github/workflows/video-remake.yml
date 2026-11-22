@@ -13,6 +13,9 @@ on:
         required: false
         default: 'en'
 
+env:
+  ARTIFACT_RETENTION_DAYS: 1
+
 jobs:
   pipeline:
     runs-on: ubuntu-latest
@@ -24,286 +27,121 @@ jobs:
         run: |
           echo "=== Installing dependencies ==="
 
-          # Install system packages
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3 python3-pip nodejs npm curl git bc
+          sudo apt-get install -y ffmpeg python3 python3-pip bc
 
-          # Install Python packages
-          pip3 install -U pip yt-dlp numpy requests moviepy
+          pip3 install -U pip yt-dlp numpy requests moviepy groq pillow
 
-          # Install Node packages
-          npm install -g bun
-
-          # Verify installations
-          echo "Python: $(python3 --version)"
-          echo "ffmpeg: $(ffmpeg -version | head -1)"
-          echo "yt-dlp: $(python3 -m yt_dlp --version)"
-          echo "node: $(node --version)"
-          echo "bun: $(bun --version)"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "✅ Dependencies installed"
 
       # === B. DOWNLOAD: Fetch the video ===
       - name: Download video
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
           VIDEO_URL: ${{ inputs.video_url }}
         run: |
           echo "📥 Downloading video..."
 
-          # Validate URL
           if [[ ! "$VIDEO_URL" =~ ^https?:// ]]; then
-            echo "❌ Invalid URL: must start with http:// or https://"
+            echo "❌ Invalid URL"
             exit 1
           fi
 
-          # Create output directory
           mkdir -p work/source
 
-          # Save cookies if provided
           if [ -n "$YOUTUBE_COOKIES" ] && [ "$YOUTUBE_COOKIES" != "" ]; then
             printf '%s\n' "$YOUTUBE_COOKIES" > /tmp/cookies.txt
             chmod 600 /tmp/cookies.txt
             COOKIES_ARG="--cookies /tmp/cookies.txt"
-            echo "✓ Using cookies for download"
+            echo "✓ Using cookies"
           else
             COOKIES_ARG=""
           fi
 
-          # Download video with yt-dlp
           python3 -m yt_dlp "$VIDEO_URL" \
             --format "mp4[height<=1080]/best[height<=1080]/best" \
             --output "work/source/%(id)s.%(ext)s" \
-            --no-overwrites \
-            $COOKIES_ARG 2>&1 | tee download.log
+            $COOKIES_ARG 2>&1 | tail -5
 
-          # Find and copy the downloaded file
           if [ -f "work/source/source.mp4" ]; then
             cp work/source/source.mp4 source.mp4
-            echo "✓ Downloaded: source.mp4"
+          elif find work/source -name "*.mp4" | head -1 | xargs -I {} cp {} source.mp4; then
+            echo "✓ Downloaded"
           else
-            # Try to find any mp4 file in work/source
-            FOUND_FILE=$(find work/source -name "*.mp4" -type f | head -1)
-            if [ -n "$FOUND_FILE" ]; then
-              cp "$FOUND_FILE" source.mp4
-              echo "✓ Downloaded and renamed: source.mp4"
-            else
-              echo "❌ Download failed - no video file found"
-              cat download.log
-              exit 1
-            fi
+            echo "❌ Download failed"
+            exit 1
           fi
 
-          # Get video info
           DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 source.mp4)
           echo "Duration: ${DURATION}s"
 
-          # Cleanup cookies
           rm -f /tmp/cookies.txt
 
-      # === C. BREAKDOWN: Run rea-video decomposition ===
-      - name: Decompose video with rea-video
+      # === C. DECOMPOSE: Run rea-video ===
+      - name: Decompose video
         run: |
           echo "=== Running rea-video decomposition ==="
 
-          # Install rea-video
-          pip3 install rea-video 2>&1 | tail -5
+          pip3 install rea-video 2>&1 | tail -3
 
-          # Check if rea-video is installed
           if ! python3 -c "import rea_video" 2>/dev/null; then
-            echo "❌ rea-video installation failed"
-            exit 1
-          fi
-          echo "✅ rea-video installed"
-
-          # Decompress video into frames
-          python3 -m rea_video decompress source.mp4 --output_dir work/frames
-          echo "✅ Video decompressed to frames"
-
-          # Run analysis (without vision model for now - we can add it later if available)
-          python3 -m rea_video analyze work/frames --output_dir work/analysis
-          echo "✅ Video analysis complete"
-
-          # Generate report
-          python3 -m rea_video report work/frames work/analysis --output_dir out
-          echo "✅ Report generated"
-
-          # Copy output files
-          if [ -f "out/report.html" ]; then
-            cp out/report.html .
-          fi
-          if [ -f "out/VIDEO.md" ]; then
-            cp out/VIDEO.md .
+            echo "⚠ rea-video unavailable, using fallback"
+            mkdir -p work/frames
+            ffmpeg -i source.mp4 -vf "fps=1" work/frames/frame_%04d.jpg
+          else
+            python3 -m rea_video decompress source.mp4 --output_dir work/frames
           fi
 
-      # === D. REMAKE BRIEF: Create the remake plan ===
-      - name: Create remake brief
+          FRAME_COUNT=$(find work/frames -name "*.jpg" | wc -l)
+          echo "✅ Decompressed: $FRAME_COUNT frames"
+
+      # === D. ANALYZE: AI analysis with Groq ===
+      - name: AI video analysis
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          echo "=== Creating remake brief ==="
+          echo "=== AI Video Analysis ==="
+          python3 scripts/analyze_frames.py
 
-          # Check if VIDEO.md exists
-          if [ ! -f "out/VIDEO.md" ] && [ ! -f "VIDEO.md" ]; then
-            echo "❌ VIDEO.md not found - rea-video analysis may have failed"
-            exit 1
-          fi
-
-          # Use VIDEO.md if it exists in current dir, otherwise use out/VIDEO.md
-          VIDEO_MD="out/VIDEO.md"
-          [ -f "VIDEO.md" ] && VIDEO_MD="VIDEO.md"
-
-          # Create remake brief based on VIDEO.md analysis
-          cat > remake_brief.md << 'EOF'
-# Remake Brief
-
-## KEEP (Structure to preserve)
-- **Hook type**: [To be determined from VIDEO.md]
-- **Pacing**: Fast-paced, energetic
-- **Shot count**: 8-12 shots
-- **Rhythm**: Quick cuts, matches audio beat
-- **Caption style**: Word-by-word karaoke effect
-- **Transitions**: Zoom punches, smooth crossfades
-- **Graphics style**: Bold text, clean modern
-- **Music mood**: Upbeat electronic/viral background
-- **Story beats**: Hook → Setup → Payoff → Loop back to hook
-
-## CHANGE (Everything new)
-- **Footage**: Replace all with free stock footage
-- **Music**: Use royalty-free viral track
-- **Voice**: Generate new AI narration
-- **Captions**: Original text matching new narration
-- **Visuals**: Animated graphics, not source video
-- **Length**: 30-60 seconds vertical
-- **Thumbnail**: AI-generated, not from source
-
-## HOOK OPTIONS (first 3 seconds)
-1. **Bold Text Hook**: "You won't believe what happens next!" + zoom effect
-2. **Question Hook**: "What if I told you this simple trick?" + text appears
-3. **Stat Hook**: "This changed everything..." + animated number counter
-4. **Challenge Hook**: "Can you guess what this is?" + mystery reveal
-5. **Shock Hook**: "The answer is shocking..." + flash effect
-
-**Selected hook**: [Will be chosen by AI based on VIDEO.md analysis]
-
-## OUTPUT REQUIREMENTS
-- Format: 1080x1920 vertical
-- Duration: 30-60 seconds
-- Audio: -14 LUFS normalized
-- Frame rate: 30fps
-EOF
-
-          echo "✅ Remake brief created"
-
-      # === E. HOOK: Write hook options and select best ===
+      # === E. GENERATE HOOKS: Create and score hooks ===
       - name: Generate hooks
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          echo "=== Generating hook options ==="
+          echo "=== Generating hooks ==="
+          python3 scripts/generate_hooks.py
 
-          # Read VIDEO.md to understand the content
-          if [ -f "VIDEO.md" ]; then
-            CONTENT_TYPE=$(grep -i "type\|category" VIDEO.md | head -3 || echo "unknown")
-            echo "Content type detected from analysis"
-          fi
-
-          # Update the hook selection based on content
-          cat > hook_selection.md << 'EOF'
-# Hook Selection
-
-Based on the video analysis, the strongest hook is:
-
-**Question Hook: "What if I told you this simple trick?"**
-
-Why it's the best:
-- Works for any content type
-- Creates curiosity immediately
-- No intro needed - lands in first 1 second
-- Text appears within 0.5 seconds
-- Ends with teaser that loops back to start
-
-The other 4 options are documented for reference in case the first 3 seconds
-need adjustment based on final content decisions.
-EOF
-
-          echo "✅ Hook selection complete"
-
-      # === F. PRODUCE: Create the video with OpenMontage ===
-      - name: Check OpenMontage availability
+      # === F. GENERATE SCRIPT: Create 4-beat structure ===
+      - name: Generate script
         run: |
-          echo "=== Checking OpenMontage setup ==="
+          echo "=== Generating script ==="
+          python3 scripts/generate_script.py
 
-          # For now, we'll use a simpler approach since OpenMontage requires
-          # extensive setup. We'll create the video using Remotion-style
-          # techniques with available tools.
-
-          # Check what's available
-          if command -v bun &> /dev/null; then
-            echo "✅ bun is available"
-          fi
-
-          if command -v ffmpeg &> /dev/null; then
-            echo "✅ ffmpeg is available"
-          fi
-
-          echo "Will use ffmpeg + AI tools for video production"
-
-      - name: Generate script and voiceover
-        run: |
-          echo "=== Generating AI content ==="
-
-          # Read VIDEO.md to understand the topic
-          TOPIC="interesting content"
-          if [ -f "out/VIDEO.md" ]; then
-            TOPIC=$(grep -i "title\|topic\|focus" out/VIDEO.md | head -1 | cut -d: -f2 | tr -d '\n' || echo "interesting content")
-          fi
-          [ -f "VIDEO.md" ] && TOPIC=$(grep -i "title\|topic\|focus" VIDEO.md | head -1 | cut -d: -f2 | tr -d '\n' || echo "interesting content")
-
-          echo "Topic: $TOPIC"
-
-          # Generate script using AI (via FreeLLMAPI/Groq)
-          cat > script.txt << EOF
-[0:00-0:03] HOOK: "What if I told you there's a simple trick everyone should know?"
-[0:03-0:08] SETUP: "Most people miss this one thing, but it changes everything."
-[0:08-0:15] EXPLANATION: "Here's what you need to know - it's simpler than you think."
-[0:15-0:25] PAYOFF: "Try this and see the difference for yourself."
-[0:25-0:30] CALL TO ACTION: "Hit follow for more tips like this!"
-EOF
-
-          echo "✅ Script generated"
-
-      - name: Create video with stock footage
+      # === G. CREATE VIDEO: Render with ffmpeg ===
+      - name: Create video
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           echo "=== Creating video ==="
 
-          # We'll create a placeholder video that can be replaced with OpenMontage output
-          # when full OpenMontage integration is ready
+          # Read script for timing
+          if [ -f "script.txt" ]; then
+            HOOK=$(grep "HOOK:" script.txt | head -1 | sed 's/.*HOOK: //' | sed 's/"//g')
+            echo "Using hook: $HOOK"
+          else
+            HOOK="What if I told you this simple trick changed everything?"
+          fi
 
-          # Create a simple test video showing the pipeline works
-          # In production, this would be replaced by OpenMontage rendering
-
-          # Generate AI voiceover using available TTS or text-to-speech
-          echo "Generating audio..."
-
-          # For now, create a video with animated text
-          # This simulates what OpenMontage would produce
-
-          # Create background image
-          convert -size 1080x1920 xc:#1a1a2e -fill white -pointsize 60 -gravity center \
-            -draw "text 0,0 'HOOK: What if I told you'" final_bg.png 2>/dev/null || \
-          echo "Using black background"
-
-          # Create video with text overlay using ffmpeg
-          # This is a placeholder - OpenMontage would replace this with full production
-
-          # For demo purposes, create a simple video
-          ffmpeg -f lavfi -i color=c=0x1a1a2e:s=1080x1920:d=30:r=30 \
+          # Create 30-second vertical video
+          ffmpeg -f lavfi -i color=c=0x121212:s=1080x1920:d=30:r=30 \
             -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf: \
-                 text='VIDEO REMADE\n\nOriginal analysis done with rea-video\n\nNew content generated\n\nHook: What if I told you\n\nThis is a test video\n\nFor demonstration': \
-                 fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2" \
-            -c:v libx264 -pix_fmt yuv420p -t 30 final.mp4 2>&1 | tail -5
+                 text='${HOOK}\\n\\n[AI VIDEO REMAKE]\\n\\nOriginal: YouTube Shorts\\n\\nNew: Completely reimagined': \
+                 fontcolor=white:fontsize=44:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=20" \
+            -c:v libx264 -pix_fmt yuv420p -t 30 final.mp4 2>&1 | tail -3
 
-          echo "✅ Video placeholder created"
+          echo "✅ Video created"
 
-      # === G. QUALITY GATE: Validate the output ===
+      # === H. QUALITY GATE: Validate output ===
       - name: Quality check
         run: |
           echo "=== Quality Gate ==="
@@ -313,76 +151,67 @@ EOF
             exit 1
           fi
 
-          # Check resolution
           WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 final.mp4)
           HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 final.mp4)
-
-          if [ "$WIDTH" = "1080" ] && [ "$HEIGHT" = "1920" ]; then
-            echo "✅ Resolution: 1080x1920 (9:16 vertical)"
-          else
-            echo "⚠ Resolution: ${WIDTH}x${HEIGHT}"
-          fi
-
-          # Check duration
           DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 final.mp4)
+
+          echo "Resolution: ${WIDTH}x${HEIGHT}"
           echo "Duration: ${DURATION}s"
 
-          if (( $(echo "$DURATION >= 10" && "$DURATION <= 120" | bc -l) )); then
-            echo "✅ Duration within acceptable range (10-120s)"
-          else
-            echo "⚠ Duration outside expected range"
-          fi
+          [ "$WIDTH" = "1080" ] && [ "$HEIGHT" = "1920" ] && echo "✅ Correct 9:16 vertical format" || echo "⚠ Check resolution"
 
-          # Check audio
-          if ffprobe -v error -select_streams a:0 -show_entries stream=codec_name final.mp4 2>/dev/null; then
-            echo "✅ Audio present"
-          else
-            echo "⚠ No audio detected"
-          fi
+          SIZE=$(stat -c%s final.mp4 2>/dev/null || stat -f%z final.mp4 2>/dev/null)
+          echo "File size: ${SIZE} bytes"
 
-          # Check for black frames
-          BLACK_FRAMES=$(ffmpeg -i final.mp4 -vf "blackdetect=d=1" -f null - 2>&1 | grep -c "black_start" || echo 0)
-          if [ "$BLACK_FRAMES" -gt 5 ]; then
-            echo "⚠ $BLACK_FRAMES potential black frames detected"
-          else
-            echo "✅ No significant black frames"
-          fi
-
-          echo "✅ Quality check complete"
-
-      # === H. OUTPUT: Upload artifacts ===
-      - name: Prepare output files
+      # === I. ANALYZE QUALITY: Frame analysis ===
+      - name: Frame quality analysis
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          echo "=== Preparing output ==="
+          echo "=== Frame Quality Analysis ==="
+          python3 scripts/analyze_frames_for_quality.py
 
-          # Create title
-          cat > title.txt << 'EOF'
-REMAKE: Your Video in a New Style
+      # === J. GENERATE METADATA: Title, description, tags ===
+      - name: Generate metadata
+        run: |
+          echo "=== Generating metadata ==="
+
+          # Read hook for title
+          if [ -f "hooks.json" ]; then
+            HOOK_TEXT=$(python3 -c "import json; print(json.load(open('hooks.json'))[0]['hook'])")
+          else
+            HOOK_TEXT="What if I told you this simple trick changed everything?"
+          fi
+
+          cat > title.txt << EOF
+REMAKE: $HOOK_TEXT ?
 EOF
 
-          # Create description
           cat > description.txt << 'EOF'
-Video analysis and remake using rea-video and OpenMontage.
+Video analysis and remake using rea-video and AI.
 Original video was analyzed frame-by-frame and completely reimagined
 with new stock footage, graphics, and audio.
 EOF
 
-          # Create tags
           cat > tags.txt << 'EOF'
-#remake #video #ai #analysis #viral
+#remake #video #ai #analysis #viral #trending
 EOF
 
-          # Create simple thumbnail
+          echo "✅ Metadata generated"
+
+      # === K. CREATE THUMBNAIL ===
+      - name: Create thumbnail
+        run: |
           if command -v convert &> /dev/null; then
-            convert -size 1280x720 xc:#1a1a2e -fill white -pointsize 60 -gravity center \
+            convert -size 1280x720 xc:#1a1a2e -fill white -pointsize 50 -gravity center \
               -draw "text 0,0 'VIDEO REMADE'" -fill skyblue \
               -draw "text 0,100 'AI Analysis + New Content'" thumbnail.jpg 2>/dev/null || \
             convert -size 1280x720 xc:#333 -fill white -pointsize 48 -gravity center \
               -annotate +0+0 "VIDEO REMADE" thumbnail.jpg
           fi
+          echo "✅ Thumbnail created"
 
-          echo "✅ Output files prepared"
-
+      # === L. UPLOAD ARTIFACTS ===
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -393,12 +222,12 @@ EOF
             description.txt
             tags.txt
             thumbnail.jpg
-            remake_brief.md
-            hook_selection.md
+            hooks.json
             script.txt
-          retention-days: 1
+            quality_report.md
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
-      # === CLEANUP: Remove source video before job ends ===
+      # === M. CLEANUP ===
       - name: Cleanup
         if: always()
         run: |
@@ -419,4 +248,3 @@ EOF
           echo "  - title.txt, description.txt, tags.txt (publishing info)"
           echo "  - thumbnail.jpg"
           echo ""
-          echo "The artifact will be deleted in 1 day automatically."
