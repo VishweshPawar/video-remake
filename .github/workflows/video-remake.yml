@@ -183,19 +183,17 @@ jobs:
             HOOK_TEXT="What if I told you this simple trick changed everything?"
           fi
 
-          cat > title.txt << EOF
-REMAKE: $HOOK_TEXT ?
-EOF
+          echo "REMAKE: $HOOK_TEXT ?" > title.txt
 
           cat > description.txt << 'EOF'
-Video analysis and remake using rea-video and AI.
-Original video was analyzed frame-by-frame and completely reimagined
-with new stock footage, graphics, and audio.
-EOF
+          Video analysis and remake using rea-video and AI.
+          Original video was analyzed frame-by-frame and completely reimagined
+          with new stock footage, graphics, and audio.
+          EOF
 
           cat > tags.txt << 'EOF'
-#remake #video #ai #analysis #viral #trending
-EOF
+          #remake #video #ai #analysis #viral #trending
+          EOF
 
           echo "✅ Metadata generated"
 
