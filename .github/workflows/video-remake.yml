@@ -221,9 +221,10 @@ THUMBNAIL: <concept for thumbnail>
 """
 
 response = client.chat.completions.create(
-    model="meta-llama-3.1-405b-vision-preview",
+    model="qwen/qwen3.8-27b",  # Vision model for analyzing video frames
     messages=[{"role": "user", "content": prompt}],
-    max_tokens=1500
+    max_tokens=1500,
+    reasoning=False
 )
 
 script = response.choices[0].message.content.strip()
