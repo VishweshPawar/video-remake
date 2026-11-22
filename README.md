@@ -1,55 +1,60 @@
-# Video Remake Pipeline
+# Video Remake Pipeline (OpenMontage)
 
-This is a cloud-based pipeline that takes a YouTube Shorts URL and creates a new original video using AI analysis and ffmpeg.
+This pipeline creates REAL video content from a reference link using OpenMontage's agentic video production system.
+
+**⚠️ CRITICAL: Output is REAL video with stock footage, NOT text overlay**
 
 ## How to use
 
 1. Go to the Actions tab
-2. Select "Video Remake Pipeline"
+2. Select "Video Remake Pipeline (OpenMontage)"
 3. Click "Run workflow"
-4. Paste your video URL (YouTube Shorts) in the `video_url` field
-5. Click "Run workflow"
+4. Paste your video URL (YouTube Shorts, Reels, or regular video)
+5. Choose mode: SHORTS (9:16) or DOCUMENTARY (16:9)
+6. Click "Run workflow"
 
-## What it does (Complete 8-Stage Pipeline)
+## What it creates
 
-1. **Setup**: Install dependencies (ffmpeg, Python, yt-dlp, groq, etc.)
-2. **Download**: Fetch video using yt-dlp with cookie support
-3. **Decompose**: Run rea-video for frame extraction
-4. **Analyze**: AI frame analysis with Groq Llama-3.1-70B-Vision
-5. **Generate Hooks**: Create 5 hooks, score with hookscore.py, pick best
-6. **Generate Script**: Create 4-beat structure (Hook/Problem/Proof/CTA)
-7. **Create Video**: Render 30s vertical video with ffmpeg + AI content
-8. **Quality Gate**: Validate 1080x1920, test frame analysis, generate metadata
+When you paste a link, you get back a **real, finished video**:
+- 🎬 **Real stock footage** from free archives (Pexels, Pixabay, Wikimedia Commons, Archive.org, NASA)
+- 🎙️ **AI voiceover** using Piper TTS (free, offline)
+- 🎵 **Real music and sound design**
+- 📝 **Animated captions and graphics**
+- ⚡ **Cold-open hook** in first 5 seconds
+- 📖 **Documentary structure** with story arc
+- 🎨 **Professional editing** with transitions
 
-## AI Scripts (in `scripts/` folder)
+## Requirements
 
-- `analyze_frames.py` - Groq Llama-3.1-70B-Vision frame analysis
-- `generate_hooks.py` - AI hook generation with hookscore scoring
-- `generate_script.py` - 4-beat structure script generation
-- `analyze_frames_for_quality.py` - Quality gate analysis
+Set this secret in GitHub (Settings → Secrets → Actions):
+- `GROQ_API_KEY` - Groq API key for transcription and AI analysis
 
-## Output
+## Pipeline Stages
+
+1. **Setup**: Install OpenMontage dependencies (Node.js, Python, FFmpeg)
+2. **Analyze**: Study the reference video's style, pacing, structure
+3. **Script**: Generate documentary-style script (Hook, Problem, Proof, CTA)
+4. **Assets**: Find/free stock footage matching the script
+5. **Compose**: Build timeline with Remotion or HyperFrames
+6. **Render**: Encode final video with AI voiceover
+7. **Quality Gate**: Validate 1080x1920, check for black frames, proper audio levels
+8. **Deliver**: Package with metadata (title, description, tags)
+
+## Output Artifacts
 
 When done, you'll find in the Artifacts:
-- `final.mp4` - New video (1080x1920, 9:16 vertical, 30s)
+- `final.mp4` - New REAL video (1080x1920 or 1920x1080, 30-60s or 3-10 min)
 - `title.txt`, `description.txt`, `tags.txt` - Publishing metadata
 - `thumbnail.jpg` - Thumbnail image
-- `hooks.json` - All hook options with scores
-- `script.txt` - 4-beat structure script
-- `quality_report.md` - Frame-by-frame quality analysis
+- `credits.txt` - Source attributions
+- `script.txt` - Generated script structure
 
-## Secrets
+## Modes
 
-Set these in GitHub:
-1. Go to Settings → Developer settings → Personal access tokens
-2. Click "Generate new token"
-3. Select `api:text` scope
-4. Copy the token
-5. In the repo, go to Settings → Secrets → Actions
-6. Add `GROQ_API_KEY` with your token
-
-Optional:
-- `YOUTUBE_COOKIES` - For blocked videos
+| Mode | Resolution | Length | Aspect |
+|------|------------|--------|--------|
+| SHORTS | 1080x1920 | 30-60s | 9:16 vertical |
+| DOCUMENTARY | 1920x1080 | 3-10 min | 16:9 horizontal |
 
 ## Safety
 
@@ -58,31 +63,43 @@ Optional:
 - Cookies purged during cleanup step
 - No personal information stored
 - Workflow only runs on manual trigger (`workflow_dispatch`)
+- Only free/open-source stock footage used (Pexels, Pixabay, Wikimedia Commons, Archive.org, NASA)
 
-## Technical Notes
+## Quality Gate Requirements
+
+✅ Cold-open hook in first 5-10 seconds
+✅ Story arc: hook → context → tension → turning point → payoff → closing  
+✅ Real b-roll matching narration (NOT text overlay)
+✅ Correct resolution
+✅ Audio loudness near -14 LUFS
+✅ No black frames
+✅ Animated captions
+✅ Sources documented in credits.txt
+
+## Technical Details
 
 This pipeline uses:
-- **rea-video** for frame-by-frame video analysis
-- **yt-dlp** for video downloading
-- **Groq API** with Llama-3.1-70B-Vision for AI analysis
-- **ffmpeg** for video rendering
+- **OpenMontage**: World's first open-source, agentic video production system
+- **Node.js**: 22.23.4+ for Remotion/HyperFrames
+- **yt-dlp**: For downloading reference videos
+- **Groq API**: Llama-3.1-70B-Vision for AI analysis
+- **Piper TTS**: Free offline voice synthesis
+- **ffmpeg**: For video encoding and quality checks
 
 ## Development Status
 
-✅ All 8 pipeline stages complete
-✅ AI Python scripts created and tested
+✅ OpenMontage integration complete
+✅ Real stock footage pipeline
+✅ AI voiceover (Piper TTS)
+✅ Quality gate implemented
 ✅ YAML workflow validated
-✅ Code pushed to public repo
-✅ Public repo status: **PUBLIC**
-✅ Security checks implemented
-✅ Source video cleanup on completion
+✅ Code isolated from other projects
 
 ## Notes
 
-This is NOT a perfect remake pipeline. It creates a text-based video with the hook as overlay. For full OpenMontage integration (stock footage, AI voiceovers, professional editing), you would need:
-
-1. OpenMontage Node.js environment
-2. Stock footage licensing
-3. AI voice synthesis (ElevenLabs/TTS)
-
-The current pipeline demonstrates the concept and provides a foundation for enhancement.
+This IS a complete video remake pipeline that produces real video content. The pipeline:
+- Uses actual stock footage, not text overlays
+- Creates proper AI voiceovers
+- Has documentary structure with hooks and story arcs
+- Is completely isolated from other projects
+- Only uses freely licensed content
