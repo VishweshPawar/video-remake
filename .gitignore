@@ -1,0 +1,50 @@
+# Cookies and auth files
+cookies.txt
+*.txt.bak
+
+# Environment files with secrets
+.env
+.env.local
+*.env.local
+
+# Downloaded source videos (NEVER commit these)
+source.mp4
+source/
+work/
+*_source.mp4
+*-downloaded.mp4
+
+# Output videos
+output/
+final.mp4
+final/
+
+# Transcripts and analysis
+transcript.json
+transcript.txt
+hype.json
+report.html
+VIDEO.md
+breakdown.json
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node/npm
+node_modules/
+.npm/
+package-lock.json
+
+# Artifacts (local cache)
+artifacts/
+
+# OS files
+.DS_Store
+Thumbs.db
