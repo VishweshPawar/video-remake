@@ -37,3 +37,18 @@ Set these in GitHub Settings → Secrets → Actions:
 - Source video is never uploaded
 - No personal information is stored in this repo
 - Workflow only runs when manually triggered
+
+## Technical Notes
+
+This pipeline uses:
+- **rea-video** for frame-by-frame video analysis and decomposition
+- **OpenMontage** for AI-driven video production (integration in progress)
+- **yt-dlp** for video downloading
+- **ffmpeg** for video processing
+
+## Development Status
+
+✅ Pipeline workflow complete
+✅ Security checks implemented (no secrets in files, cookies purged)
+✅ Artifact retention set to 1 day
+✅ Source video cleanup on job completion
